@@ -25,14 +25,12 @@ int saveFile (char * save, int ** array, int height, int width, int bpp)
 	for ( int i = 0; i < height; i++){
 		for ( int j = 0; j < width; j++, pg+=gray_channels){
 		*pg = (array[i][j]);
-		printf ("%d ", array[i][j]);
 		if (gray_channels == 3)
 			{
 				*(pg+1) = array[i][j];
 				*(pg+2) = array[i][j];
 			}
 		}
-		printf ("\n");
 	}
 
 	stbi_write_png(save, width, height, gray_channels, gray_img, width*gray_channels);
@@ -129,10 +127,10 @@ int *** readFile (char * filename, int * width, int * height, int * bpp)
 int proceed ()
 {
 	int height = 0, width = 0, bpp = 0;
-	int *** file = readFile("pic.png", &width, &height, &bpp);
-	//int ** file_2D = processFile(file, height, width, bpp);
-	int ** file_2D = fakeProceed(file, height, width);
-	saveFile("save1.png", file_2D, height, width, bpp);
+	int *** file = readFile("image.png", &width, &height, &bpp);
+	int ** file_2D = processFile(file, height, width, bpp);
+	//int ** file_2D = fakeProceed(file, height, width);
+	saveFile("save.png", file_2D, height, width, bpp);
 }
 
 int main() {
