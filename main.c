@@ -5,7 +5,11 @@
 #include "stb_image_write.h"
 #include <stdlib.h>
 
+#include <time.h>
+
 #define check printf("check\n")
+
+#define BILLION 1000000000L;
 
 double sobel_kernel[3*3] ={
 	1.,0.,-1.,
@@ -15,6 +19,7 @@ double sobel_kernel[3*3] ={
 
 int saveFile (char * save, int ** array, int height, int width, int bpp)
 {
+
 	int gray_channels = 1;
 	int gray_img_size = height * width * gray_channels;
 
@@ -86,14 +91,38 @@ int ** sobelFilter (int *** array, int height, int width, double * K){
 	return im_vertical;
 }
 
-int ** processFile (int *** array, int height, int width, int bpp)
+int ** processFile (int *** array, int height, int width, int bpp, double * sobel_time)
 {
+
+	struct timespec start, stop;
+
+	if ( clock_gettime (CLOCK_REALTIME, &start ) == -1 ){
+		perror ("clock gettime");
+		exit(EXIT_FAILURE);
+	}
+
 	int ** im_vertical = sobelFilter (array, height, width, sobel_kernel);
+
+	if ( clock_gettime (CLOCK_REALTIME, &stop ) == -1 ){
+		perror ("clock gettime");
+		exit(EXIT_FAILURE);
+	}
+
+	*sobel_time = (stop.tv_sec - start.tv_sec ) + (double)(stop.tv_nsec - start.tv_nsec) / BILLION;
+
 	return im_vertical;
 }
 
-int *** readFile (char * filename, int * width, int * height, int * bpp)
+int *** readFile (char * filename, int * width, int * height, int * bpp, double * read_time)
 {
+
+	struct timespec start, stop;
+
+	if ( clock_gettime (CLOCK_REALTIME, &start ) == -1 ){
+		perror ("clock gettime");
+		exit(EXIT_FAILURE);
+	}
+
 	unsigned char * data = stbi_load(filename, width, height, bpp,3);
 
 	if(data==NULL)
@@ -121,19 +150,48 @@ int *** readFile (char * filename, int * width, int * height, int * bpp)
 			array[i][j][2] = pixelOffset[2];
 		}
 	}
+
+	if ( clock_gettime (CLOCK_REALTIME, &stop ) == -1 ){
+		perror ("clock gettime");
+		exit(EXIT_FAILURE);
+	}
+
+	*read_time = (stop.tv_sec - start.tv_sec ) + (double)(stop.tv_nsec - start.tv_nsec) / BILLION;
+
 	return array;
 }
 
-int proceed ()
+void saveTimer ( char * read_timers_name, char * sobel_timers_name, double read_time, double sobel_time)
 {
-	int height = 0, width = 0, bpp = 0;
-	int *** file = readFile("pic.png", &width, &height, &bpp);
-	int ** file_2D = processFile(file, height, width, bpp);
-	//int ** file_2D = fakeProceed(file, height, width);
-	saveFile("save.png", file_2D, height, width, bpp);
+	FILE * read_timers = fopen (read_timers_name, "a");
+	FILE * sobel_timers = fopen (sobel_timers_name, "a");
+
+	if ( read_timers == NULL || sobel_timers == NULL)
+	{
+		perror ("Error opening file.");
+	}
+	else
+	{
+		fprintf(read_timers, "%lf\n", read_time);
+		fprintf(sobel_timers, "%lf\n", sobel_time);	
+	}
+
+	fclose (read_timers);
+	fclose (sobel_timers);
 }
 
-int main() {
-	proceed();
+int proceed ( char * read_name, char * save_name, char * read_timers_name, char * sobel_timers_name)
+{
+	double read_time, sobel_time;
+	int height = 0, width = 0, bpp = 0;
+	int *** file = readFile(read_name, &width, &height, &bpp, &read_time);
+	int ** file_2D = processFile(file, height, width, bpp, &sobel_time);
+	//int ** file_2D = fakeProceed(file, height, width);
+	saveFile(save_name, file_2D, height, width, bpp);
+	saveTimer(read_timers_name, sobel_timers_name, read_time, sobel_time);
+}
+
+int main( int ** argc, char ** argv) {
+	proceed(argv[1], argv[2], argv[3], argv[4]);
 	return 0;
 }
