@@ -15,7 +15,7 @@ double sobel_kernel[3*3] ={
 
 int saveFile (char * save, int ** array, int height, int width, int bpp)
 {
-	int gray_channels = 3;
+	int gray_channels = 1;
 	int gray_img_size = height * width * gray_channels;
 
 	unsigned char * gray_img = (char*) malloc (gray_img_size);
@@ -25,16 +25,17 @@ int saveFile (char * save, int ** array, int height, int width, int bpp)
 	for ( int i = 0; i < width; i++){
 		for ( int j = 0; j < height; j++, pg+=gray_channels){
 		*pg = (array[i][j]);
+		printf ("%d ", array[i][j]);
 		if (gray_channels == 3)
 			{
 				*(pg+1) = array[i][j];
 				*(pg+2) = array[i][j];
 			}
 		}
+		printf ("\n");
 	}
 
 	stbi_write_png(save, width, height, gray_channels, gray_img, width*gray_channels);
-	//stbi_write_jpg("save.jpg", width, height, gray_channels, gray_img, 100);
 	free (gray_img);
 }
 
@@ -48,7 +49,7 @@ int ** fakeProceed ( int *** array, int height, int width)
 	for ( int i = 0; i < width; i++){
 		for ( int j = 0; j < height; j++)
 		{
-			im_vertical[i][j] = 0.299 * array[i][j][0] + 0.587 * array[i][j][1] + 0.144 * array[i][j][2];
+			im_vertical[i][j] = 0.3 * array[i][j][0] + 0.59 * array[i][j][1] + 0.11 * array[i][j][2];
 		}
 	}
 	return im_vertical;
@@ -79,8 +80,7 @@ int ** sobelFilter (int *** array, int height, int width, double * K){
 					cp[l] = (cp[l]>255.0) ? 255.0 : ((cp[l]<0.0) ? 0.0 : cp[l]);
 				}
 				//grayscale conversion
-				//im_vertical[ix][iy]=0.299*cp[0] + 0.587*cp[1]+ 0.144*cp[2];
-				im_vertical[ix][iy]=0.299*cp[0] + 0.587*cp[1]+ 0.144*cp[2];
+				im_vertical[ix][iy]=0.3*cp[0] + 0.59*cp[1]+ 0.11*cp[2];
 				//printf("%d,", im_vertical[ix][iy]);
 			}
 		}
@@ -96,7 +96,7 @@ int ** processFile (int *** array, int height, int width, int bpp)
 
 int *** readFile (char * filename, int * width, int * height, int * bpp)
 {
-	char * data = stbi_load(filename, width, height, bpp,3);
+	unsigned char * data = stbi_load(filename, width, height, bpp,3);
 
 	if(data==NULL)
 		{
@@ -115,12 +115,12 @@ int *** readFile (char * filename, int * width, int * height, int * bpp)
 		}
 	}
 
-	for (int i = 0; i < (*width); i++) {
-		for (int j = 0; j < (*height); j++) {
-			array[i][j][0] = *(data);
-			array[i][j][1] = *(data+1);
-			array[i][j][2] = *(data+2);
-			data+=3;
+	for (int i = 0; i < (*height); i++) {
+		for (int j = 0; j < (*width); j++) {
+			unsigned char* pixelOffset = data + (i + (*height) * j) * 3;
+			array[j][i][0] = pixelOffset[0];
+			array[j][i][1] = pixelOffset[1];
+			array[j][i][2] = pixelOffset[2];
 		}
 	}
 	return array;
@@ -132,7 +132,7 @@ int proceed ()
 	int *** file = readFile("pic.png", &width, &height, &bpp);
 	//int ** file_2D = processFile(file, height, width, bpp);
 	int ** file_2D = fakeProceed(file, height, width);
-	saveFile("save.png", file_2D, height, width, bpp);
+	saveFile("save1.png", file_2D, height, width, bpp);
 }
 
 int main() {
