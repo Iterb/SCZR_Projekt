@@ -1,15 +1,21 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
-#include <stdlib.h>
 
-#include <time.h>
+
 
 #define check printf("check\n")
-
 #define BILLION 1000000000L;
+
+
 
 double sobel_kernel[3*3] ={
 	1.,0.,-1.,
@@ -17,48 +23,46 @@ double sobel_kernel[3*3] ={
 	1.,0.,-1.,
 };
 
-int saveFile (char * save, int ** array, int height, int width, int bpp)
-{
 
-	int gray_channels = 1;
-	int gray_img_size = height * width * gray_channels;
 
-	unsigned char * gray_img = (char*) malloc (gray_img_size);
+int *** readFile (char * filename, int * width, int * height, int * bpp, double * read_time);
+int proceed ( char * read_name, char * save_name, char * read_timers_name, char * sobel_timers_name);
 
-	unsigned char * pg = gray_img;
+int ** sobelFilter (int *** array, int height, int width, double * K, double * sobel_time);
 
-	for ( int i = 0; i < height; i++){
-		for ( int j = 0; j < width; j++, pg+=gray_channels){
-		*pg = (array[i][j]);
-		if (gray_channels == 3)
-			{
-				*(pg+1) = array[i][j];
-				*(pg+2) = array[i][j];
-			}
-		}
-	}
+int saveFile (char * save, int ** array, int height, int width, int bpp);
+void saveTimer ( char * read_timers_name, char * sobel_timers_name, double read_time, double sobel_time);
 
-	stbi_write_png(save, width, height, gray_channels, gray_img, width*gray_channels);
-	free (gray_img);
+
+
+int main( int ** argc, char ** argv) {
+
+	proceed(argv[1], argv[2], argv[3], argv[4]);
+
+	return 0;
 }
 
-int ** fakeProceed ( int *** array, int height, int width)
+int proceed ( char * read_name, char * save_name, char * read_timers_name, char * sobel_timers_name)
 {
-	int ** im_vertical = (int**) malloc (height * sizeof(int*));
-		for ( int i=0; i < height; i++){
-			im_vertical[i] = (int*) malloc (width*sizeof(int) );
-	}
+	double read_time, sobel_time;
+	int height = 0, width = 0, bpp = 0;
 
-	for ( int i = 0; i < height; i++){
-		for ( int j = 0; j < width; j++)
-		{
-			im_vertical[i][j] = 0.3 * array[i][j][0] + 0.59 * array[i][j][1] + 0.11 * array[i][j][2];
-		}
-	}
-	return im_vertical;
+	int *** file = readFile(read_name, &width, &height, &bpp, &read_time);
+	int ** file_2D = sobelFilter(file, height, width, sobel_kernel, &sobel_time);
+
+	saveFile(save_name, file_2D, height, width, bpp);
+	saveTimer(read_timers_name, sobel_timers_name, read_time, sobel_time);
 }
 
-int ** sobelFilter (int *** array, int height, int width, double * K){
+int ** sobelFilter (int *** array, int height, int width, double * K, double * sobel_time){
+
+	struct timespec start, stop;
+
+	if ( clock_gettime (CLOCK_REALTIME, &start ) == -1 ){
+		perror ("clock gettime");
+		exit(EXIT_FAILURE);
+	}
+
 	unsigned int ix, iy, l;
 	int kx, ky;
 	double cp[3];
@@ -88,20 +92,6 @@ int ** sobelFilter (int *** array, int height, int width, double * K){
 			}
 		}
 	}
-	return im_vertical;
-}
-
-int ** processFile (int *** array, int height, int width, int bpp, double * sobel_time)
-{
-
-	struct timespec start, stop;
-
-	if ( clock_gettime (CLOCK_REALTIME, &start ) == -1 ){
-		perror ("clock gettime");
-		exit(EXIT_FAILURE);
-	}
-
-	int ** im_vertical = sobelFilter (array, height, width, sobel_kernel);
 
 	if ( clock_gettime (CLOCK_REALTIME, &stop ) == -1 ){
 		perror ("clock gettime");
@@ -161,6 +151,36 @@ int *** readFile (char * filename, int * width, int * height, int * bpp, double 
 	return array;
 }
 
+int saveFile (char * save, int ** array, int height, int width, int bpp)
+{
+	struct stat sb;
+	if ( stat("results", &sb) != -1)
+	{
+		printf ("%ld\n", sb.st_size);
+	}
+	
+	int gray_channels = 1;
+	int gray_img_size = height * width * gray_channels;
+
+	unsigned char * gray_img = (char*) malloc (gray_img_size);
+
+	unsigned char * pg = gray_img;
+
+	for ( int i = 0; i < height; i++){
+		for ( int j = 0; j < width; j++, pg+=gray_channels){
+		*pg = (array[i][j]);
+		if (gray_channels == 3)
+			{
+				*(pg+1) = array[i][j];
+				*(pg+2) = array[i][j];
+			}
+		}
+	}
+
+	stbi_write_png(save, width, height, gray_channels, gray_img, width*gray_channels);
+	free (gray_img);
+}
+
 void saveTimer ( char * read_timers_name, char * sobel_timers_name, double read_time, double sobel_time)
 {
 	FILE * read_timers = fopen (read_timers_name, "a");
@@ -178,20 +198,4 @@ void saveTimer ( char * read_timers_name, char * sobel_timers_name, double read_
 
 	fclose (read_timers);
 	fclose (sobel_timers);
-}
-
-int proceed ( char * read_name, char * save_name, char * read_timers_name, char * sobel_timers_name)
-{
-	double read_time, sobel_time;
-	int height = 0, width = 0, bpp = 0;
-	int *** file = readFile(read_name, &width, &height, &bpp, &read_time);
-	int ** file_2D = processFile(file, height, width, bpp, &sobel_time);
-	//int ** file_2D = fakeProceed(file, height, width);
-	saveFile(save_name, file_2D, height, width, bpp);
-	saveTimer(read_timers_name, sobel_timers_name, read_time, sobel_time);
-}
-
-int main( int ** argc, char ** argv) {
-	proceed(argv[1], argv[2], argv[3], argv[4]);
-	return 0;
 }
