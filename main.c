@@ -22,8 +22,8 @@ int saveFile (char * save, int ** array, int height, int width, int bpp)
 
 	unsigned char * pg = gray_img;
 
-	for ( int i = 0; i < width; i++){
-		for ( int j = 0; j < height; j++, pg+=gray_channels){
+	for ( int i = 0; i < height; i++){
+		for ( int j = 0; j < width; j++, pg+=gray_channels){
 		*pg = (array[i][j]);
 		printf ("%d ", array[i][j]);
 		if (gray_channels == 3)
@@ -41,13 +41,13 @@ int saveFile (char * save, int ** array, int height, int width, int bpp)
 
 int ** fakeProceed ( int *** array, int height, int width)
 {
-	int ** im_vertical = (int**) malloc (width*sizeof(int*));
-		for ( int i=0; i < width; i++){
-			im_vertical[i] = (int*) malloc (height*sizeof(int) );
+	int ** im_vertical = (int**) malloc (height * sizeof(int*));
+		for ( int i=0; i < height; i++){
+			im_vertical[i] = (int*) malloc (width*sizeof(int) );
 	}
 
-	for ( int i = 0; i < width; i++){
-		for ( int j = 0; j < height; j++)
+	for ( int i = 0; i < height; i++){
+		for ( int j = 0; j < width; j++)
 		{
 			im_vertical[i][j] = 0.3 * array[i][j][0] + 0.59 * array[i][j][1] + 0.11 * array[i][j][2];
 		}
@@ -104,23 +104,23 @@ int *** readFile (char * filename, int * width, int * height, int * bpp)
 		exit(1);
 		}
 
-	int *** array = (int***)malloc((*width) * sizeof(int**)); //array[width][height][color]
+	int *** array = (int***)malloc((*height) * sizeof(int**)); //array[height][width][color]
 	int i, j;
 
-	for (i = 0; i < (*width); i++) {
+	for (i = 0; i < (*height); i++) {
 
-		array[i] = (int**)malloc((*height) * sizeof(int*));
-		for (j = 0; j < (*height); j++) {
+		array[i] = (int**)malloc((*width) * sizeof(int*));
+		for (j = 0; j < (*width); j++) {
 			array[i][j] = (int*)malloc(3 * sizeof(int));
 		}
 	}
 
 	for (int i = 0; i < (*height); i++) {
 		for (int j = 0; j < (*width); j++) {
-			unsigned char* pixelOffset = data + (i + (*height) * j) * 3;
-			array[j][i][0] = pixelOffset[0];
-			array[j][i][1] = pixelOffset[1];
-			array[j][i][2] = pixelOffset[2];
+			unsigned char* pixelOffset = data + (j + (*width) * i) * 3;
+			array[i][j][0] = pixelOffset[0];
+			array[i][j][1] = pixelOffset[1];
+			array[i][j][2] = pixelOffset[2];
 		}
 	}
 	return array;
