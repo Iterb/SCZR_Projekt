@@ -58,18 +58,18 @@ int ** sobelFilter (int *** array, int height, int width, double * K){
 	int kx, ky;
 	double cp[3];
 
-	int ** im_vertical = (int**) malloc (width*sizeof(int*) );
-	for ( int i=0; i < width; i++){
-		im_vertical[i] = (int*) malloc (height*sizeof(int) );
+	int ** im_vertical = (int**) malloc (height*sizeof(int*) );
+	for ( int i=0; i < height; i++){
+		im_vertical[i] = (int*) malloc (width*sizeof(int) );
 	}
 	if (im_vertical != NULL) {
-		for ( ix = 0; ix < width; ix++) {
-			for ( iy = 0; iy < height; iy++){
+		for ( ix = 0; ix < height; ix++) {
+			for ( iy = 0; iy < width; iy++){
 				cp[0] = cp[1] = cp[2] = 0.0;
 				for ( kx = -1; kx <= 1; kx++){
 					for ( ky = -1; ky <= 1; ky++){
 						for ( l = 0; l < 3; l++){
-							if (!(((iy+ky)>height || (iy+ky)<1) || ((ix+kx)>width || (ix+kx)<1)))
+							if (!(((iy+ky)>width || (iy+ky)<1) || ((ix+kx)>height || (ix+kx)<1)))
 								cp[l] += K[(kx+1)+(ky+1)*3] * array[ix+kx-1][iy+ky-1][l];
 						}
 					}
@@ -127,7 +127,7 @@ int *** readFile (char * filename, int * width, int * height, int * bpp)
 int proceed ()
 {
 	int height = 0, width = 0, bpp = 0;
-	int *** file = readFile("image.png", &width, &height, &bpp);
+	int *** file = readFile("pic.png", &width, &height, &bpp);
 	int ** file_2D = processFile(file, height, width, bpp);
 	//int ** file_2D = fakeProceed(file, height, width);
 	saveFile("save.png", file_2D, height, width, bpp);
