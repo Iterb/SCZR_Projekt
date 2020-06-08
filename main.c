@@ -3,6 +3,7 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <dirent.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -10,12 +11,8 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
-
-
 #define check printf("check\n")
 #define BILLION 1000000000L;
-
-
 
 double sobel_kernel[3*3] ={
 	1.,0.,-1.,
@@ -23,11 +20,17 @@ double sobel_kernel[3*3] ={
 	1.,0.,-1.,
 };
 
+double sobel_kernel2[3*3] ={
+	1.,2.,1.,
+	0.,0.,0.,
+	-1.,-2.,-1.,
+};
 
 
 int *** readFile (char * filename, int * width, int * height, int * bpp, double * read_time);
 int proceed ( char * read_name, char * save_name, char * read_timers_name, char * sobel_timers_name);
 
+int ** thresholdImage(int ** array, int height, int width, int TH);
 int ** sobelFilter (int *** array, int height, int width, double * K, double * sobel_time);
 
 int saveFile (char * save, int ** array, int height, int width, int bpp);
@@ -37,7 +40,11 @@ void saveTimer ( char * read_timers_name, char * sobel_timers_name, double read_
 
 int main( int ** argc, char ** argv) {
 
-	proceed(argv[1], argv[2], argv[3], argv[4]);
+	int i = 0;
+	while ( i < 10){
+		proceed(argv[1], argv[2], "timers/read_timer.txt", "timers/sobel_timer.txt");
+		i++;
+	}
 
 	return 0;
 }
@@ -48,7 +55,9 @@ int proceed ( char * read_name, char * save_name, char * read_timers_name, char 
 	int height = 0, width = 0, bpp = 0;
 
 	int *** file = readFile(read_name, &width, &height, &bpp, &read_time);
-	int ** file_2D = sobelFilter(file, height, width, sobel_kernel, &sobel_time);
+
+	int ** file_2D = sobelFilter(file, height, width, sobel_kernel2, &sobel_time);
+	file_2D= thresholdImage(file_2D, height, width, 160);
 
 	saveFile(save_name, file_2D, height, width, bpp);
 	saveTimer(read_timers_name, sobel_timers_name, read_time, sobel_time);
@@ -103,6 +112,23 @@ int ** sobelFilter (int *** array, int height, int width, double * K, double * s
 	return im_vertical;
 }
 
+int ** thresholdImage(int ** array, int height, int width, int TH){
+
+	int ** im_binary = (int**) malloc (height*sizeof(int*) );
+	for ( int i=0; i < height; i++){
+		im_binary[i] = (int*) malloc (width*sizeof(int) );
+	}
+	if (im_binary != NULL) {
+		for ( int i = 0; i < height; i++){
+			for ( int j = 0; j < width; j++)
+			{
+				im_binary[i][j] = (array[i][j]>TH) ? 255.0 : 0;
+			}
+		}
+	}
+	return im_binary;
+}
+
 int *** readFile (char * filename, int * width, int * height, int * bpp, double * read_time)
 {
 
@@ -113,7 +139,7 @@ int *** readFile (char * filename, int * width, int * height, int * bpp, double 
 		exit(EXIT_FAILURE);
 	}
 
-	unsigned char * data = stbi_load(filename, width, height, bpp,3);
+	unsigned char * data = stbi_load(filename, width, height, bpp,3);	
 
 	if(data==NULL)
 		{
@@ -153,12 +179,16 @@ int *** readFile (char * filename, int * width, int * height, int * bpp, double 
 
 int saveFile (char * save, int ** array, int height, int width, int bpp)
 {
-	struct stat sb;
-	if ( stat("results", &sb) != -1)
-	{
-		printf ("%ld\n", sb.st_size);
-	}
+	system("ls results | wc -l > size.txt");
+	FILE * size_file = fopen ("size.txt", "r");
+	int size;
+	fscanf (size_file, "%d", &size);
+	fclose (size_file);
 	
+	char * temp;
+	sprintf(temp, "%d", size);
+	strcat(save, temp);
+
 	int gray_channels = 1;
 	int gray_img_size = height * width * gray_channels;
 
@@ -184,18 +214,26 @@ int saveFile (char * save, int ** array, int height, int width, int bpp)
 void saveTimer ( char * read_timers_name, char * sobel_timers_name, double read_time, double sobel_time)
 {
 	FILE * read_timers = fopen (read_timers_name, "a");
-	FILE * sobel_timers = fopen (sobel_timers_name, "a");
-
-	if ( read_timers == NULL || sobel_timers == NULL)
+	if ( read_timers == NULL)
 	{
 		perror ("Error opening file.");
 	}
 	else
 	{
 		fprintf(read_timers, "%lf\n", read_time);
-		fprintf(sobel_timers, "%lf\n", sobel_time);	
+		fclose (read_timers);	
 	}
 
-	fclose (read_timers);
-	fclose (sobel_timers);
+	FILE * sobel_timers = fopen (sobel_timers_name, "a");
+
+	if (sobel_timers == NULL)
+	{
+		perror ("Error opening file.");
+	}
+	else
+	{
+		fprintf(sobel_timers, "%lf\n", sobel_time);	
+		fclose (sobel_timers);
+	}
+
 }
