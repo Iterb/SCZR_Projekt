@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <dirent.h>
+#include <unistd.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -35,7 +36,7 @@ int ** sobelFilter (int *** array, int height, int width, double * K, double * s
 
 int saveFile (char * save, int ** array, int height, int width, int bpp);
 void saveTimer ( char * read_timers_name, char * sobel_timers_name, double read_time, double sobel_time);
-
+void startProcesses();
 
 
 int main( int ** argc, char ** argv) {
@@ -45,6 +46,8 @@ int main( int ** argc, char ** argv) {
 		proceed(argv[1], argv[2], "timers/read_timer.txt", "timers/sobel_timer.txt");
 		i++;
 	}
+
+	startProcesses();
 
 	return 0;
 }
@@ -62,6 +65,39 @@ int proceed ( char * read_name, char * save_name, char * read_timers_name, char 
 	saveFile(save_name, file_2D, height, width, bpp);
 	saveTimer(read_timers_name, sobel_timers_name, read_time, sobel_time);
 }
+
+void producerProcess(){
+	printf("Hello from producer process\n");
+}
+void clientProcess(){
+	printf("Hello from client process\n");
+}
+void archiverProcess(){
+	printf("Hello from archiver process\n");
+}
+
+void startProcesses(){
+
+	pid_t PID_A;
+	PID_A = fork();
+	pid_t PID_B;
+	PID_B = fork();
+
+
+	if (PID_A == 0 && PID_B == 0){
+		producerProcess();
+	}
+	else if (PID_A > 0 && PID_B == 0){
+		clientProcess();
+	}
+	else if (PID_A == 0 && PID_B > 0){
+		archiverProcess();
+	}
+	else if (PID_A < 0 || PID_B < 0){
+		printf("Fork error!");
+	}
+}
+
 
 int ** sobelFilter (int *** array, int height, int width, double * K, double * sobel_time){
 
@@ -139,7 +175,7 @@ int *** readFile (char * filename, int * width, int * height, int * bpp, double 
 		exit(EXIT_FAILURE);
 	}
 
-	unsigned char * data = stbi_load(filename, width, height, bpp,3);	
+	unsigned char * data = stbi_load(filename, width, height, bpp,3);
 
 	if(data==NULL)
 		{
@@ -184,7 +220,7 @@ int saveFile (char * save, int ** array, int height, int width, int bpp)
 	int size;
 	fscanf (size_file, "%d", &size);
 	fclose (size_file);
-	
+
 	char * temp;
 	sprintf(temp, "%d", size);
 	strcat(save, temp);
@@ -221,7 +257,7 @@ void saveTimer ( char * read_timers_name, char * sobel_timers_name, double read_
 	else
 	{
 		fprintf(read_timers, "%lf\n", read_time);
-		fclose (read_timers);	
+		fclose (read_timers);
 	}
 
 	FILE * sobel_timers = fopen (sobel_timers_name, "a");
@@ -232,7 +268,7 @@ void saveTimer ( char * read_timers_name, char * sobel_timers_name, double read_
 	}
 	else
 	{
-		fprintf(sobel_timers, "%lf\n", sobel_time);	
+		fprintf(sobel_timers, "%lf\n", sobel_time);
 		fclose (sobel_timers);
 	}
 
