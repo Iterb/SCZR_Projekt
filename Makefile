@@ -1,2 +1,2 @@
 sobel: main.c
-	gcc -o sobel main.c -lm
+	gcc -o sobel main.c -lm -lrt

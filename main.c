@@ -5,9 +5,13 @@
 #include <sys/types.h>
 #include <dirent.h>
 #include <unistd.h>
-
+#include <mqueue.h>
+#include <string.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+
+#include "common.h"
+
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -27,7 +31,6 @@ double sobel_kernel2[3*3] ={
 	-1.,-2.,-1.,
 };
 
-
 int *** readFile (char * filename, int * width, int * height, int * bpp, double * read_time);
 int proceed ( char * read_name, char * save_name, char * read_timers_name, char * sobel_timers_name);
 
@@ -40,12 +43,6 @@ void startProcesses();
 
 
 int main( int ** argc, char ** argv) {
-
-	int i = 0;
-	while ( i < 10){
-		proceed(argv[1], argv[2], "timers/read_timer.txt", "timers/sobel_timer.txt");
-		i++;
-	}
 
 	startProcesses();
 
@@ -67,10 +64,78 @@ int proceed ( char * read_name, char * save_name, char * read_timers_name, char 
 }
 
 void producerProcess(){
-	printf("Hello from producer process\n");
+	printf("COZ");
+	mqd_t mq;
+	char buffer[MAX_SIZE];
+	double read_time, sobel_time;
+	int height = 0, width = 0, bpp = 0;
+	int i=0,ix=0,iy=0;
+
+	int *** array = readFile("images/pic.png", &width, &height, &bpp, &read_time);
+	for ( ix = 0; ix < height; ix++) {
+		for ( iy = 0; iy < width; iy++){
+			b = (char*)array[ix][iy] + '0';
+			buffer[ix + iy*height] = *b;
+		}
+	}
+
+
+	/* open the mail queue */
+	mq = mq_open(QUEUE_NAME, O_WRONLY);
+	CHECK((mqd_t)-1 != mq);
+	printf("Mq_otwarte producer");
+
+	while ( i < 1000){
+			//saveTimer("timers/read_timer.txt", "sobel_timers.txt", read_time, sobel_time);
+			memset(buffer, 0, MAX_SIZE);
+			fgets(buffer, MAX_SIZE, stdin);
+
+			/* send the message */
+			CHECK(0 <= mq_send(mq, buffer, MAX_SIZE, 0));
+		i++;
+	}
+	/* cleanup */
+	CHECK((mqd_t)-1 != mq_close(mq));
+	printf("Koniec");
 }
 void clientProcess(){
-	printf("Hello from client process\n");
+	mqd_t mq;
+  struct mq_attr attr;
+  char buffer[MAX_SIZE + 1];
+  int must_stop = 0;
+
+  /* initialize the queue attributes */
+  attr.mq_flags = 0;
+  attr.mq_maxmsg = 10;
+  attr.mq_msgsize = MAX_SIZE;
+  attr.mq_curmsgs = 0;
+
+  /* create the message queue */
+  mq = mq_open(QUEUE_NAME, O_CREAT | O_RDONLY, 0644, &attr);
+	CHECK((mqd_t)-1 != mq);
+	printf("Mq_otwarte client");
+
+  do {
+      ssize_t bytes_read;
+			CHECK(bytes_read >= 0);
+      /* receive the message */
+      bytes_read = mq_receive(mq, buffer, MAX_SIZE, NULL);
+
+      buffer[bytes_read] = '\0';
+      if (! strncmp(buffer, MSG_STOP, strlen(MSG_STOP)))
+      {
+          must_stop = 1;
+      }
+      else
+      {
+          printf("Received: %s\n", buffer);
+      }
+  } while (!must_stop);
+
+  /* cleanup */
+	CHECK((mqd_t)-1 != mq_close(mq));
+	CHECK((mqd_t)-1 != mq_unlink(QUEUE_NAME));
+
 }
 void archiverProcess(){
 	printf("Hello from archiver process\n");
@@ -91,7 +156,7 @@ void startProcesses(){
 		clientProcess();
 	}
 	else if (PID_A == 0 && PID_B > 0){
-		archiverProcess();
+		//archiverProcess();
 	}
 	else if (PID_A < 0 || PID_B < 0){
 		printf("Fork error!");
@@ -174,7 +239,7 @@ int *** readFile (char * filename, int * width, int * height, int * bpp, double 
 		perror ("clock gettime");
 		exit(EXIT_FAILURE);
 	}
-
+	*read_time = start.tv_sec  + (double)(start.tv_nsec) / BILLION;
 	unsigned char * data = stbi_load(filename, width, height, bpp,3);
 
 	if(data==NULL)
@@ -208,7 +273,7 @@ int *** readFile (char * filename, int * width, int * height, int * bpp, double 
 		exit(EXIT_FAILURE);
 	}
 
-	*read_time = (stop.tv_sec - start.tv_sec ) + (double)(stop.tv_nsec - start.tv_nsec) / BILLION;
+	//*read_time = (stop.tv_sec - start.tv_sec ) + (double)(stop.tv_nsec - start.tv_nsec) / BILLION;
 
 	return array;
 }
@@ -256,7 +321,7 @@ void saveTimer ( char * read_timers_name, char * sobel_timers_name, double read_
 	}
 	else
 	{
-		fprintf(read_timers, "%lf\n", read_time);
+		fprintf(read_timers, "%lf;\n", read_time);
 		fclose (read_timers);
 	}
 
