@@ -1,2 +1,2 @@
 sobel: main.c
-	gcc -o sobel main.c -lm -lrt
+	gcc -pthread -o sobel main.c -lm -lrt
