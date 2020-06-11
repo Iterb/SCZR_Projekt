@@ -11,30 +11,22 @@
 #include <signal.h>
 #include <stdbool.h>
 #include <errno.h>
+#include <sys/mman.h>
+#include <pthread.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
-
-#define QUEUE_NAME  "/test_queue" /* Queue name. */
-#define QUEUE_PERMS ((int)(0644))
-#define QUEUE_MAXMSG  2 /* Maximum number of messages. */
-#define QUEUE_MSGSIZE 300000 /* Length of message. */
-#define QUEUE_ATTR_INITIALIZER ((struct mq_attr){0, QUEUE_MAXMSG, QUEUE_MSGSIZE, 0, {0}})
-
-/* The consumer is faster than the publisher. */
-#define QUEUE_POLL_CONSUMER ((struct timespec){2, 500000000})
-#define QUEUE_POLL_PUBLISHER ((struct timespec){5, 0})
-
-#define QUEUE_MAX_PRIO ((int)(9))
-
-static bool th_consumer_running = true;
-static bool th_publisher_running = true;
+#include <sys/mman.h>
+#include <semaphore.h>
 
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
-
+#define BUFFER_SIZE 300000
 #define check printf("check\n")
 #define BILLION 1000000000L;
+
+
+
 
 double sobel_kernel[3*3] ={
 	1.,0.,-1.,
@@ -47,6 +39,19 @@ double sobel_kernel2[3*3] ={
 	0.,0.,0.,
 	-1.,-2.,-1.,
 };
+void* create_shared_memory(size_t size) {
+  // Our memory buffer will be readable and writable:
+  int protection = PROT_READ | PROT_WRITE;
+
+  // The buffer will be shared (meaning other processes can access it), but
+  // anonymous (meaning third-party processes cannot obtain an address for it),
+  // so only this process and its children will be able to use it:
+  int visibility = MAP_SHARED | MAP_ANONYMOUS;
+
+  // The remaining parameters to `mmap()` are not important for this use case,
+  // but the manpage for `mmap` explains their purpose.
+  return mmap(NULL, size, protection, visibility, -1, 0);
+}
 
 int *** readFile (char * filename, int * width, int * height, int * bpp, double * read_time);
 int proceed ( char * read_name, char * save_name, char * read_timers_name, char * sobel_timers_name);
@@ -59,7 +64,25 @@ void saveTimer ( char * read_timers_name, char * sobel_timers_name, double read_
 void startProcesses();
 
 
+void* shmem;
+sem_t* mutex;
+sem_t* shm_full;
+sem_t* shm_empty;
+
 int main( int ** argc, char ** argv) {
+
+
+	shmem = create_shared_memory(BUFFER_SIZE);
+	mutex = (sem_t *) create_shared_memory(sizeof(sem_t));
+	shm_full = (sem_t *) create_shared_memory(sizeof(sem_t));
+	shm_empty = (sem_t *) create_shared_memory(sizeof(sem_t));
+
+	if( sem_init( mutex, 1, 1 ) != 0 )
+		printf("sem_init: failed");
+	if( sem_init( shm_full, 1, 1 ) != 0 )
+		printf("sem_init: failed");
+	if( sem_init( shm_empty, 1, 0 ) != 0 )
+		printf("sem_init: failed");
 
 	startProcesses();
 
@@ -67,6 +90,7 @@ int main( int ** argc, char ** argv) {
 	return 0;
 
 }
+
 int proceed ( char * read_name, char * save_name, char * read_timers_name, char * sobel_timers_name)
 {
 	double read_time, sobel_time;
@@ -83,13 +107,13 @@ int proceed ( char * read_name, char * save_name, char * read_timers_name, char 
 
 void producerProcess(){
 	double read_time, sobel_time;
+	struct timespec start, stop;
 	int height = 0, width = 0, bpp = 0;
 	int i=0,ix=0,iy=0;
 
 	int *** array = readFile("images/pic.png", &width, &height, &bpp, &read_time);
-	char buffer[QUEUE_MSGSIZE];
+	char buffer[BUFFER_SIZE];
 	char *b;
-	printf("%d %d\n",height, width );
 	for ( ix = 0; ix < height; ix++) {
 		for ( iy = 0; iy < width; iy++){
 			b = (char*)(array[ix][iy]);
@@ -98,113 +122,64 @@ void producerProcess(){
 	}
 
 
-	mqd_t mq;
-	struct timespec poll_sleep;
-	struct timespec start, stop;
-	do {
-		mq = mq_open(QUEUE_NAME, O_WRONLY);
-		if(mq < 0) {
-			printf("[PUBLISHER]: The queue is not created yet. Waiting...\n");
-
-			poll_sleep = QUEUE_POLL_PUBLISHER;
-			nanosleep(&poll_sleep, NULL);
-		}
-	} while(mq == -1);
-
-	printf("[PUBLISHER]: Queue opened, queue descriptor: %d.\n", mq);
-
-	/* Intializes random number generator. */
-	srand((unsigned)time(NULL));
-
-	unsigned int prio = 0;
-	int count = 1;
-
-	while(th_publisher_running) {
-		/* Send a burst of three messages */
-		prio = QUEUE_MAX_PRIO;
-		//snprintf(buffer, sizeof(buffer), "MESSAGE NUMBER %d, PRIORITY %d", count, prio);
 
 
-		printf("[PUBLISHER]: Sending message %d with priority %d...\n", count, prio);
-		if ( clock_gettime (CLOCK_REALTIME, &start ) == -1 ){
-			perror ("clock gettime");
-			exit(EXIT_FAILURE);
-		}
-		mq_send(mq, buffer, QUEUE_MSGSIZE, prio);
-		read_time = start.tv_sec  + (double)(start.tv_nsec) / BILLION;
-		saveTimer("timers/send_timer.txt", "sobel_timers.txt", read_time, sobel_time);
-		count++;
 
-		poll_sleep = QUEUE_POLL_PUBLISHER;
-		nanosleep(&poll_sleep, NULL);
 
-		fflush(stdout);
-		break;
+	sem_wait( shm_full );
+	printf("[PRODUCER]: shm_full down.\n");
+	sem_wait( mutex );
+	printf("[PRODUCER]: mutex down.\n");
+	if ( clock_gettime (CLOCK_REALTIME, &start ) == -1 ){
+		perror ("clock gettime");
+		exit(EXIT_FAILURE);
 	}
+	memcpy(shmem, buffer, sizeof(buffer));
+	read_time = start.tv_sec  + (double)(start.tv_nsec) / BILLION;
+	saveTimer("timers/send_timer.txt", "sobel_timers.txt", read_time, sobel_time);
+	printf("[PRODUCER]: Copied data to shared memory.\n");
+	sem_post( shm_empty );
+	printf("[PRODUCER]: shm_empty up.\n");
+	sem_post( mutex );
+	printf("[PRODUCER]: mutex up.\n");
 
-	/* Cleanup */
-	printf("[PUBLISHER]: Cleanup...\n");
-	mq_close(mq);
+
 
 
 }
 
-
-
-/*
-	while ( i < 1){
-			//saveTimer("timers/read_timer.txt", "sobel_timers.txt", read_time, sobel_time);
-
-		i++;
-	}
-	*/
-	/* cleanup */
 void clientProcess(){
 		double read_time, sobel_time;
 		struct timespec start, stop;
-		struct mq_attr attr = QUEUE_ATTR_INITIALIZER;
+		char buffer[BUFFER_SIZE];
 
-		/* Create the message queue. The queue reader is NONBLOCK. */
-		mqd_t mq = mq_open(QUEUE_NAME, O_CREAT | O_RDONLY | O_NONBLOCK, QUEUE_PERMS, &attr);
-		if(mq < 0) {
-			fprintf(stderr, "[CONSUMER]: Error, cannot open the queue: %s.\n", strerror(errno));
-			exit(1);
+		sem_wait( shm_empty );
+		printf("[Client]: shm_empty down.\n");
+		sem_wait( mutex );
+		printf("[Client]: mutex down.\n");
+
+		memcpy(buffer, shmem, sizeof(buffer));
+		if ( clock_gettime (CLOCK_REALTIME, &start ) == -1 ){
+			perror ("clock gettime");
+			exit(EXIT_FAILURE);
 		}
+		read_time = start.tv_sec  + (double)(start.tv_nsec) / BILLION;
+		saveTimer("timers/receive_timer.txt", "sobel_timers.txt", read_time, sobel_time);
+		printf("[CLIENT]: Read data from shared memory.\n");
 
-		printf("[CONSUMER]: Queue opened, queue descriptor: %d.\n", mq);
 
-		unsigned int prio;
-		ssize_t bytes_read= 0;
-		char buffer[QUEUE_MSGSIZE + 1];
-		struct timespec poll_sleep;
-		while(th_consumer_running) {
-			memset(buffer, 0x00, sizeof(buffer));
-			bytes_read = mq_receive(mq, buffer, QUEUE_MSGSIZE, &prio);
-			if(bytes_read >= 0) {
-				if ( clock_gettime (CLOCK_REALTIME, &start ) == -1 ){
-					perror ("clock gettime");
-					exit(EXIT_FAILURE);
-				}
-				read_time = start.tv_sec  + (double)(start.tv_nsec) / BILLION;
-				saveTimer("timers/receive_timer.txt", "sobel_timers.txt", read_time, sobel_time);
-				printf("[CONSUMER]: Received message: \"%ld\"\n", sizeof(buffer));
-				break;
-			} else {
-				printf("[CONSUMER]: No messages yet.\n");
-				poll_sleep = QUEUE_POLL_CONSUMER;
-				nanosleep(&poll_sleep, NULL);
+		sem_post( mutex );
+		printf("[Client]: mutex up.\n");
+		sem_post( shm_full );
+		printf("[Client]: shm_full up.\n");
+
+/*
+		for (int ix = 0; ix < 480; ix++) {
+			for (int iy = 0; iy < 640; iy++){
+				printf("%d, ", (int*)buffer[iy + ix*480]);
 			}
-
-			fflush(stdout);
 		}
-
-		/* Cleanup */
-		printf("[CONSUMER]: Cleanup...\n");
-		mq_close(mq);
-		mq_unlink(QUEUE_NAME);
-
-
-
+*/
 }
 void archiverProcess(){
 	printf("Hello from archiver process\n");
