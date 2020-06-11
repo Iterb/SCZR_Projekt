@@ -81,7 +81,6 @@ int proceed ( char * read_name, char * save_name, char * read_timers_name, char 
 }
 
 void producerProcess(){
-	printf("COZ");
 	double read_time, sobel_time;
 	int height = 0, width = 0, bpp = 0;
 	int i=0,ix=0,iy=0;
@@ -100,6 +99,7 @@ void producerProcess(){
 
 	mqd_t mq;
 	struct timespec poll_sleep;
+	struct timespec start, stop;
 	do {
 		mq = mq_open(QUEUE_NAME, O_WRONLY);
 		if(mq < 0) {
@@ -125,7 +125,13 @@ void producerProcess(){
 
 
 		printf("[PUBLISHER]: Sending message %d with priority %d...\n", count, prio);
+		if ( clock_gettime (CLOCK_REALTIME, &start ) == -1 ){
+			perror ("clock gettime");
+			exit(EXIT_FAILURE);
+		}
 		mq_send(mq, buffer, QUEUE_MSGSIZE, prio);
+		read_time = start.tv_sec  + (double)(start.tv_nsec) / BILLION;
+		saveTimer("timers/send_timer.txt", "sobel_timers.txt", read_time, sobel_time);
 		count++;
 
 		poll_sleep = QUEUE_POLL_PUBLISHER;
@@ -153,7 +159,8 @@ void producerProcess(){
 	*/
 	/* cleanup */
 void clientProcess(){
-
+		double read_time, sobel_time;
+		struct timespec start, stop;
 		struct mq_attr attr = QUEUE_ATTR_INITIALIZER;
 
 		/* Create the message queue. The queue reader is NONBLOCK. */
@@ -173,6 +180,12 @@ void clientProcess(){
 			memset(buffer, 0x00, sizeof(buffer));
 			bytes_read = mq_receive(mq, buffer, QUEUE_MSGSIZE, &prio);
 			if(bytes_read >= 0) {
+				if ( clock_gettime (CLOCK_REALTIME, &start ) == -1 ){
+					perror ("clock gettime");
+					exit(EXIT_FAILURE);
+				}
+				read_time = start.tv_sec  + (double)(start.tv_nsec) / BILLION;
+				saveTimer("timers/receive_timer.txt", "sobel_timers.txt", read_time, sobel_time);
 				printf("[CONSUMER]: Received message: \"%ld\"\n", sizeof(buffer));
 				break;
 			} else {
