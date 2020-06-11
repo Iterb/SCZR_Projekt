@@ -107,6 +107,8 @@ int proceed ( char * read_name, char * save_name, char * read_timers_name, char 
 
 void producerProcess(){
 	double read_time, sobel_time;
+	pid_t pid = getpid();
+	int policy = sched_getscheduler(pid);
 	struct timespec start, stop;
 	int height = 0, width = 0, bpp = 0;
 	int i=0,ix=0,iy=0;
@@ -121,10 +123,28 @@ void producerProcess(){
 		}
 	}
 
+	//set priority
+	struct sched_param sp = { .sched_priority = sched_get_priority_max(SCHED_OTHER) };
+	int ret;
+
+	//choose policy
+	ret = sched_setscheduler(0, SCHED_OTHER, &sp);
+	if (ret == -1) {
+		perror("sched_setscheduler");
+	}
+	policy = sched_getscheduler(pid);
+	printf("[PRODUCER]:Scheduler Policy for PID: %d  -> ", pid);
+	switch(policy) {
+		case SCHED_OTHER: printf("SCHED_OTHER\n"); break;
+		case SCHED_RR:   printf("SCHED_RR\n"); break;
+		case SCHED_FIFO:  printf("SCHED_FIFO\n"); break;
+		default:   printf("Unknown...\n");
+	}
+
 	sem_wait( shm_full );
-	printf("[PRODUCER]: shm_full down.\n");
+	//printf("[PRODUCER]: shm_full down.\n");
 	sem_wait( mutex );
-	printf("[PRODUCER]: mutex down.\n");
+	//printf("[PRODUCER]: mutex down.\n");
 	if ( clock_gettime (CLOCK_REALTIME, &start ) == -1 ){
 		perror ("clock gettime");
 		exit(EXIT_FAILURE);
@@ -134,21 +154,41 @@ void producerProcess(){
 	saveTimer("timers/send_timer.txt", "sobel_timers.txt", read_time, sobel_time);
 	printf("[PRODUCER]: Copied data to shared memory.\n");
 	sem_post( shm_empty );
-	printf("[PRODUCER]: shm_empty up.\n");
+	//printf("[PRODUCER]: shm_empty up.\n");
 	sem_post( mutex );
-	printf("[PRODUCER]: mutex up.\n");
+	//printf("[PRODUCER]: mutex up.\n");
 
 }
 
 void clientProcess(){
+		pid_t pid = getpid();
+		int policy = sched_getscheduler(pid);
 		double read_time, sobel_time;
 		struct timespec start, stop;
 		char buffer[BUFFER_SIZE];
 
+		struct sched_param sp = { .sched_priority = sched_get_priority_max(SCHED_OTHER) };
+		int ret;
+
+		//choose policy
+		ret = sched_setscheduler(0, SCHED_OTHER, &sp);
+		if (ret == -1) {
+			perror("sched_setscheduler");
+		}
+		policy = sched_getscheduler(pid);
+		printf("[Client]: Scheduler Policy for PID: %d  -> ", pid);
+		switch(policy) {
+			case SCHED_OTHER: printf("SCHED_OTHER\n"); break;
+			case SCHED_RR:   printf("SCHED_RR\n"); break;
+			case SCHED_FIFO:  printf("SCHED_FIFO\n"); break;
+			default:   printf("Unknown...\n");
+		}
+
+
 		sem_wait( shm_empty );
-		printf("[Client]: shm_empty down.\n");
+		//printf("[Client]: shm_empty down.\n");
 		sem_wait( mutex );
-		printf("[Client]: mutex down.\n");
+		//printf("[Client]: mutex down.\n");
 
 		memcpy(buffer, shmem, sizeof(buffer));
 		if ( clock_gettime (CLOCK_REALTIME, &start ) == -1 ){
@@ -161,9 +201,9 @@ void clientProcess(){
 
 
 		sem_post( mutex );
-		printf("[Client]: mutex up.\n");
+		//printf("[Client]: mutex up.\n");
 		sem_post( shm_full );
-		printf("[Client]: shm_full up.\n");
+		//printf("[Client]: shm_full up.\n");
 
 /*
 		for (int ix = 0; ix < 480; ix++) {

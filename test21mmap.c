@@ -121,6 +121,11 @@ void producerProcess(){
 		}
 	}
 
+
+
+
+
+
 	sem_wait( shm_full );
 	printf("[PRODUCER]: shm_full down.\n");
 	sem_wait( mutex );
@@ -137,6 +142,9 @@ void producerProcess(){
 	printf("[PRODUCER]: shm_empty up.\n");
 	sem_post( mutex );
 	printf("[PRODUCER]: mutex up.\n");
+
+
+
 
 }
 
