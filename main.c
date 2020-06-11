@@ -7,10 +7,27 @@
 #include <unistd.h>
 #include <mqueue.h>
 #include <string.h>
+#include <fcntl.h>    /* For O_* constants. */
+#include <signal.h>
+#include <stdbool.h>
+#include <errno.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-#include "common.h"
+#define QUEUE_NAME  "/test_queue" /* Queue name. */
+#define QUEUE_PERMS ((int)(0644))
+#define QUEUE_MAXMSG  2 /* Maximum number of messages. */
+#define QUEUE_MSGSIZE 300000 /* Length of message. */
+#define QUEUE_ATTR_INITIALIZER ((struct mq_attr){0, QUEUE_MAXMSG, QUEUE_MSGSIZE, 0, {0}})
+
+/* The consumer is faster than the publisher. */
+#define QUEUE_POLL_CONSUMER ((struct timespec){2, 500000000})
+#define QUEUE_POLL_PUBLISHER ((struct timespec){5, 0})
+
+#define QUEUE_MAX_PRIO ((int)(9))
+
+static bool th_consumer_running = true;
+static bool th_publisher_running = true;
 
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -65,76 +82,114 @@ int proceed ( char * read_name, char * save_name, char * read_timers_name, char 
 
 void producerProcess(){
 	printf("COZ");
-	mqd_t mq;
-	char buffer[MAX_SIZE];
 	double read_time, sobel_time;
 	int height = 0, width = 0, bpp = 0;
 	int i=0,ix=0,iy=0;
 
 	int *** array = readFile("images/pic.png", &width, &height, &bpp, &read_time);
+	char buffer[QUEUE_MSGSIZE];
+	char *b;
+	printf("%d %d\n",height, width );
 	for ( ix = 0; ix < height; ix++) {
 		for ( iy = 0; iy < width; iy++){
-			b = (char*)array[ix][iy] + '0';
-			buffer[ix + iy*height] = *b;
+			b = (char*)(array[ix][iy]);
+			buffer[iy + ix*height] = *b;
 		}
 	}
 
 
-	/* open the mail queue */
-	mq = mq_open(QUEUE_NAME, O_WRONLY);
-	CHECK((mqd_t)-1 != mq);
-	printf("Mq_otwarte producer");
+	mqd_t mq;
+	struct timespec poll_sleep;
+	do {
+		mq = mq_open(QUEUE_NAME, O_WRONLY);
+		if(mq < 0) {
+			printf("[PUBLISHER]: The queue is not created yet. Waiting...\n");
 
-	while ( i < 1000){
+			poll_sleep = QUEUE_POLL_PUBLISHER;
+			nanosleep(&poll_sleep, NULL);
+		}
+	} while(mq == -1);
+
+	printf("[PUBLISHER]: Queue opened, queue descriptor: %d.\n", mq);
+
+	/* Intializes random number generator. */
+	srand((unsigned)time(NULL));
+
+	unsigned int prio = 0;
+	int count = 1;
+
+	while(th_publisher_running) {
+		/* Send a burst of three messages */
+		prio = QUEUE_MAX_PRIO;
+		//snprintf(buffer, sizeof(buffer), "MESSAGE NUMBER %d, PRIORITY %d", count, prio);
+
+
+		printf("[PUBLISHER]: Sending message %d with priority %d...\n", count, prio);
+		mq_send(mq, buffer, QUEUE_MSGSIZE, prio);
+		count++;
+
+		poll_sleep = QUEUE_POLL_PUBLISHER;
+		nanosleep(&poll_sleep, NULL);
+
+		fflush(stdout);
+		break;
+	}
+
+	/* Cleanup */
+	printf("[PUBLISHER]: Cleanup...\n");
+	mq_close(mq);
+
+
+}
+
+
+
+/*
+	while ( i < 1){
 			//saveTimer("timers/read_timer.txt", "sobel_timers.txt", read_time, sobel_time);
-			memset(buffer, 0, MAX_SIZE);
-			fgets(buffer, MAX_SIZE, stdin);
 
-			/* send the message */
-			CHECK(0 <= mq_send(mq, buffer, MAX_SIZE, 0));
 		i++;
 	}
+	*/
 	/* cleanup */
-	CHECK((mqd_t)-1 != mq_close(mq));
-	printf("Koniec");
-}
 void clientProcess(){
-	mqd_t mq;
-  struct mq_attr attr;
-  char buffer[MAX_SIZE + 1];
-  int must_stop = 0;
 
-  /* initialize the queue attributes */
-  attr.mq_flags = 0;
-  attr.mq_maxmsg = 10;
-  attr.mq_msgsize = MAX_SIZE;
-  attr.mq_curmsgs = 0;
+		struct mq_attr attr = QUEUE_ATTR_INITIALIZER;
 
-  /* create the message queue */
-  mq = mq_open(QUEUE_NAME, O_CREAT | O_RDONLY, 0644, &attr);
-	CHECK((mqd_t)-1 != mq);
-	printf("Mq_otwarte client");
+		/* Create the message queue. The queue reader is NONBLOCK. */
+		mqd_t mq = mq_open(QUEUE_NAME, O_CREAT | O_RDONLY | O_NONBLOCK, QUEUE_PERMS, &attr);
+		if(mq < 0) {
+			fprintf(stderr, "[CONSUMER]: Error, cannot open the queue: %s.\n", strerror(errno));
+			exit(1);
+		}
 
-  do {
-      ssize_t bytes_read;
-			CHECK(bytes_read >= 0);
-      /* receive the message */
-      bytes_read = mq_receive(mq, buffer, MAX_SIZE, NULL);
+		printf("[CONSUMER]: Queue opened, queue descriptor: %d.\n", mq);
 
-      buffer[bytes_read] = '\0';
-      if (! strncmp(buffer, MSG_STOP, strlen(MSG_STOP)))
-      {
-          must_stop = 1;
-      }
-      else
-      {
-          printf("Received: %s\n", buffer);
-      }
-  } while (!must_stop);
+		unsigned int prio;
+		ssize_t bytes_read= 0;
+		char buffer[QUEUE_MSGSIZE + 1];
+		struct timespec poll_sleep;
+		while(th_consumer_running) {
+			memset(buffer, 0x00, sizeof(buffer));
+			bytes_read = mq_receive(mq, buffer, QUEUE_MSGSIZE, &prio);
+			if(bytes_read >= 0) {
+				printf("[CONSUMER]: Received message: \"%ld\"\n", sizeof(buffer));
+				break;
+			} else {
+				printf("[CONSUMER]: No messages yet.\n");
+				poll_sleep = QUEUE_POLL_CONSUMER;
+				nanosleep(&poll_sleep, NULL);
+			}
 
-  /* cleanup */
-	CHECK((mqd_t)-1 != mq_close(mq));
-	CHECK((mqd_t)-1 != mq_unlink(QUEUE_NAME));
+			fflush(stdout);
+		}
+
+		/* Cleanup */
+		printf("[CONSUMER]: Cleanup...\n");
+		mq_close(mq);
+		mq_unlink(QUEUE_NAME);
+
+
 
 }
 void archiverProcess(){
