@@ -63,9 +63,10 @@ int main( int ** argc, char ** argv) {
 
 	startProcesses();
 
-	return 0;
-}
 
+	return 0;
+
+}
 int proceed ( char * read_name, char * save_name, char * read_timers_name, char * sobel_timers_name)
 {
 	double read_time, sobel_time;
