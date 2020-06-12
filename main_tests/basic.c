@@ -217,6 +217,7 @@ void clientProcess(){
 		sobel_time = (stop.tv_sec - start.tv_sec ) + (double)(stop.tv_nsec - start.tv_nsec) / BILLION;
 		saveSobelTimer(sobel_time);
 
+		//saveFile("results/result.png", result, 480, 640, 3);
 
 }
 void archiverProcess(){
@@ -355,12 +356,25 @@ int *** readFile (char * filename, int * width, int * height, int * bpp, double 
 		exit(EXIT_FAILURE);
 	}
 
+	//*read_time = (stop.tv_sec - start.tv_sec ) + (double)(stop.tv_nsec - start.tv_nsec) / BILLION;
+
 	return array;
 }
 
 int saveFile (char * save, int ** array, int height, int width, int bpp)
 {
+	/*
+	system("ls results | wc -l > size.txt");
+	FILE * size_file = fopen ("size.txt", "r");
+	int size;
+	fscanf (size_file, "%d", &size);
+	fclose (size_file);
 
+	char * temp;
+	sprintf(temp, "%d", size);
+	strcat(save, temp);
+	check;
+	*/
 	int gray_channels = 1;
 	int gray_img_size = height * width * gray_channels;
 

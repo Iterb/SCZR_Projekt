@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -17,6 +18,8 @@
 #include "stb_image.h"
 #include <sys/mman.h>
 #include <semaphore.h>
+#include <sched.h>
+#include <unistd.h>
 
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -109,6 +112,26 @@ int proceed ( char * read_name, char * save_name, char * read_timers_name, char 
 }
 
 void producerProcess(){
+
+	const int core_id = 0;
+	const pid_t pid = getpid();
+
+	cpu_set_t  cpuset;
+	CPU_ZERO(&cpuset);
+	CPU_SET(core_id, &cpuset);
+
+	const int set_result = sched_setaffinity(pid, sizeof(cpu_set_t), &cpuset);
+	if (set_result != 0) {printf("sched_setaffinity ERROR: %d \n", set_result);exit(1);}
+	
+	const int get_affinity = sched_getaffinity(pid, sizeof(cpu_set_t), &cpuset);
+	if (get_affinity != 0) {printf("sched_getaffinity ERROR: %d \n", get_affinity);exit(1);}
+	
+	if (CPU_ISSET(core_id, &cpuset)) {
+    printf("Successfully set thread %d to affinity to CPU %d\n in client process", pid, core_id);
+	} else {
+    printf("Failed to set thread %d to affinity to CPU %d\n in client process", pid, core_id);
+	}
+
 	double read_time;
 	struct timespec start, stop;
 
@@ -156,6 +179,26 @@ void producerProcess(){
 }
 
 void clientProcess(){
+
+		const int core_id = 1;
+		const pid_t pid = getpid();
+
+		cpu_set_t  cpuset;
+		CPU_ZERO(&cpuset);
+		CPU_SET(core_id, &cpuset);
+
+		const int set_result = sched_setaffinity(pid, sizeof(cpu_set_t), &cpuset);
+		if (set_result != 0) {printf("sched_setaffinity ERROR: %d \n", set_result);exit(1);}
+		
+		const int get_affinity = sched_getaffinity(pid, sizeof(cpu_set_t), &cpuset);
+		if (get_affinity != 0) {printf("sched_getaffinity ERROR: %d \n", get_affinity);exit(1);}
+		
+		if (CPU_ISSET(core_id, &cpuset)) {
+		printf("Successfully set thread %d to affinity to CPU %d\n in client process", pid, core_id);
+		} else {
+		printf("Failed to set thread %d to affinity to CPU %d\n in client process", pid, core_id);
+		}
+
 		double sobel_time;
 		struct timespec start, stop;
 
@@ -217,6 +260,7 @@ void clientProcess(){
 		sobel_time = (stop.tv_sec - start.tv_sec ) + (double)(stop.tv_nsec - start.tv_nsec) / BILLION;
 		saveSobelTimer(sobel_time);
 
+		//saveFile("results/result.png", result, 480, 640, 3);
 
 }
 void archiverProcess(){
@@ -355,12 +399,25 @@ int *** readFile (char * filename, int * width, int * height, int * bpp, double 
 		exit(EXIT_FAILURE);
 	}
 
+	//*read_time = (stop.tv_sec - start.tv_sec ) + (double)(stop.tv_nsec - start.tv_nsec) / BILLION;
+
 	return array;
 }
 
 int saveFile (char * save, int ** array, int height, int width, int bpp)
 {
+	/*
+	system("ls results | wc -l > size.txt");
+	FILE * size_file = fopen ("size.txt", "r");
+	int size;
+	fscanf (size_file, "%d", &size);
+	fclose (size_file);
 
+	char * temp;
+	sprintf(temp, "%d", size);
+	strcat(save, temp);
+	check;
+	*/
 	int gray_channels = 1;
 	int gray_img_size = height * width * gray_channels;
 

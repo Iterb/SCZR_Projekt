@@ -165,19 +165,20 @@ void clientProcess(){
 		}
 
 		char buffer[BUFFER_SIZE];
+		char buffer1[BUFFER_SIZE];
 
 		sem_wait( shm_empty );
-		printf("[Client]: shm_empty down.\n");
+		//printf("[Client]: shm_empty down.\n");
 		sem_wait( mutex );
-		printf("[Client]: mutex down.\n");
+		//printf("[Client]: mutex down.\n");
 
 		memcpy(buffer, shmem, sizeof(buffer));
-		printf("[CLIENT]: Read data from shared memory.\n");
+		//printf("[CLIENT]: Read data from shared memory.\n");
 
 		sem_post( mutex );
-		printf("[Client]: mutex up.\n");
+		//printf("[Client]: mutex up.\n");
 		sem_post( shm_full );
-		printf("[Client]: shm_full up.\n");
+		//printf("[Client]: shm_full up.\n");
 
 		int *** array = (int***)malloc(480 * sizeof(int**)); //array[height][width][color]
 		int i, j;
@@ -209,6 +210,26 @@ void clientProcess(){
 		}
 		free(array);	
 
+		for ( int ix = 0; ix < 480; ix++)
+		{
+			for ( int iy = 0; iy < 640; iy++)
+			{
+				buffer1[iy + ix*640] = result[ix][iy];
+			}
+		}
+
+		sem_wait( shm_full );
+		//printf("[PRODUCER]: shm_full down.\n");
+		sem_wait( mutex );
+		//printf("[PRODUCER]: mutex down.\n");
+
+		memcpy(shmem, buffer1, sizeof(buffer1));
+		//printf("[PRODUCER]: Copied data to shared memory.\n");
+		sem_post( shm_empty );
+		//printf("[PRODUCER]: shm_empty up.\n");
+		sem_post( mutex );
+		//printf("[PRODUCER]: mutex up.\n");
+
 		if ( clock_gettime (CLOCK_REALTIME, &stop ) == -1 ){
 		perror ("clock gettime");
 		exit(EXIT_FAILURE);
@@ -217,14 +238,44 @@ void clientProcess(){
 		sobel_time = (stop.tv_sec - start.tv_sec ) + (double)(stop.tv_nsec - start.tv_nsec) / BILLION;
 		saveSobelTimer(sobel_time);
 
-
 }
 void archiverProcess(){
-	printf("Hello from archiver process\n");
+
+		char buffer1[BUFFER_SIZE];
+
+		sem_wait( shm_empty );
+		//printf("[Client]: shm_empty down.\n");
+		sem_wait( mutex );
+		//printf("[Client]: mutex down.\n");
+
+		memcpy(buffer1, shmem, sizeof(buffer1));
+		//printf("[CLIENT]: Read data from shared memory.\n");
+
+		sem_post( mutex );
+		//printf("[Client]: mutex up.\n");
+		sem_post( shm_full );
+		//printf("[Client]: shm_full up.\n");
+
+		int ** array = (int**)malloc(480 * sizeof(int*));
+		for ( int i = 0; i < 640; i++)
+			array[i] = (int*)malloc(640*sizeof(int));
+		
+		for ( int ix = 0; ix < 480; ix++)
+		{
+			for ( int iy = 0; iy < 640; iy++)
+			{
+				array[ix][iy] = buffer1[iy + ix * 640];
+			}
+		}
+
+		saveFile ("results/result.png", array, 480, 640, 3);
 }
 
 void startProcesses(){
 
+
+	for ( int i = 0; i < 1; i++)
+	{
 	pid_t PID_A;
 	PID_A = fork();
 	pid_t PID_B;
@@ -238,10 +289,11 @@ void startProcesses(){
 		clientProcess();
 	}
 	else if (PID_A == 0 && PID_B > 0){
-		//archiverProcess();
+		archiverProcess();
 	}
 	else if (PID_A < 0 || PID_B < 0){
 		printf("Fork error!");
+	}
 	}
 }
 
@@ -355,11 +407,25 @@ int *** readFile (char * filename, int * width, int * height, int * bpp, double 
 		exit(EXIT_FAILURE);
 	}
 
+	//*read_time = (stop.tv_sec - start.tv_sec ) + (double)(stop.tv_nsec - start.tv_nsec) / BILLION;
+
 	return array;
 }
 
 int saveFile (char * save, int ** array, int height, int width, int bpp)
 {
+	/*
+	system("ls results | wc -l > size.txt");
+	FILE * size_file = fopen ("size.txt", "r");
+	int size;
+	fscanf (size_file, "%d", &size);
+	fclose (size_file);
+
+	char * temp;
+	sprintf(temp, "%d", size);
+	strcat(save, temp);
+	check;
+	*/
 
 	int gray_channels = 1;
 	int gray_img_size = height * width * gray_channels;

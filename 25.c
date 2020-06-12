@@ -18,15 +18,11 @@
 #include <sys/mman.h>
 #include <semaphore.h>
 
-
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 #define BUFFER_SIZE 930000
 #define check printf("check\n")
 #define BILLION 1000000000L;
-
-
-
 
 double sobel_kernel[3*3] ={
 	1.,0.,-1.,
@@ -87,7 +83,10 @@ int main( int ** argc, char ** argv) {
 	if( sem_init( shm_empty, 1, 0 ) != 0 )
 		printf("sem_init: failed");
 
-	startProcesses();
+	int n = 1;
+
+	for ( int i = 0; i < 6; i++)
+		startProcesses();
 
 
 	return 0;
@@ -111,6 +110,9 @@ int proceed ( char * read_name, char * save_name, char * read_timers_name, char 
 void producerProcess(){
 	double read_time;
 	struct timespec start, stop;
+
+	const pid_t pid = getpid();
+	printf ("[P|%d]\n", pid);
 
 	if ( clock_gettime (CLOCK_REALTIME, &start ) == -1 ){
 		perror ("clock gettime");
@@ -156,6 +158,9 @@ void producerProcess(){
 }
 
 void clientProcess(){
+		const pid_t pid = getpid();
+		printf ("[C|%d]\n", pid);
+
 		double sobel_time;
 		struct timespec start, stop;
 
@@ -167,17 +172,17 @@ void clientProcess(){
 		char buffer[BUFFER_SIZE];
 
 		sem_wait( shm_empty );
-		printf("[Client]: shm_empty down.\n");
+		//printf("[Client]: shm_empty down.\n");
 		sem_wait( mutex );
-		printf("[Client]: mutex down.\n");
+		//printf("[Client]: mutex down.\n");
 
 		memcpy(buffer, shmem, sizeof(buffer));
-		printf("[CLIENT]: Read data from shared memory.\n");
+		//printf("[CLIENT]: Read data from shared memory.\n");
 
 		sem_post( mutex );
-		printf("[Client]: mutex up.\n");
+		//printf("[Client]: mutex up.\n");
 		sem_post( shm_full );
-		printf("[Client]: shm_full up.\n");
+		//printf("[Client]: shm_full up.\n");
 
 		int *** array = (int***)malloc(480 * sizeof(int**)); //array[height][width][color]
 		int i, j;
@@ -217,6 +222,7 @@ void clientProcess(){
 		sobel_time = (stop.tv_sec - start.tv_sec ) + (double)(stop.tv_nsec - start.tv_nsec) / BILLION;
 		saveSobelTimer(sobel_time);
 
+		//saveFile("results/result.png", result, 480, 640, 3);
 
 }
 void archiverProcess(){
@@ -225,24 +231,25 @@ void archiverProcess(){
 
 void startProcesses(){
 
-	pid_t PID_A;
-	PID_A = fork();
-	pid_t PID_B;
-	PID_B = fork();
+		pid_t PID_A;
+		PID_A = fork();
+		pid_t PID_B;
+		PID_B = fork();
 
+		if (PID_A == 0 && PID_B == 0){
+			producerProcess();
+		}
+		else if (PID_A > 0 && PID_B == 0){
+			clientProcess();
+		}
+		else if (PID_A == 0 && PID_B > 0){
+			archiverProcess();
+		}
+		else if (PID_A < 0 || PID_B < 0){
+			printf("Fork error!");
+		}
 
-	if (PID_A == 0 && PID_B == 0){
-		producerProcess();
-	}
-	else if (PID_A > 0 && PID_B == 0){
-		clientProcess();
-	}
-	else if (PID_A == 0 && PID_B > 0){
-		//archiverProcess();
-	}
-	else if (PID_A < 0 || PID_B < 0){
-		printf("Fork error!");
-	}
+	
 }
 
 
@@ -355,12 +362,25 @@ int *** readFile (char * filename, int * width, int * height, int * bpp, double 
 		exit(EXIT_FAILURE);
 	}
 
+	//*read_time = (stop.tv_sec - start.tv_sec ) + (double)(stop.tv_nsec - start.tv_nsec) / BILLION;
+
 	return array;
 }
 
 int saveFile (char * save, int ** array, int height, int width, int bpp)
 {
+	/*
+	system("ls results | wc -l > size.txt");
+	FILE * size_file = fopen ("size.txt", "r");
+	int size;
+	fscanf (size_file, "%d", &size);
+	fclose (size_file);
 
+	char * temp;
+	sprintf(temp, "%d", size);
+	strcat(save, temp);
+	check;
+	*/
 	int gray_channels = 1;
 	int gray_img_size = height * width * gray_channels;
 
