@@ -21,7 +21,7 @@
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
-#define BUFFER_SIZE 300000
+#define BUFFER_SIZE 930000
 #define check printf("check\n")
 #define BILLION 1000000000L;
 
@@ -62,6 +62,9 @@ int ** sobelFilter (int *** array, int height, int width, double * K, double * s
 int saveFile (char * save, int ** array, int height, int width, int bpp);
 void saveTimer ( char * read_timers_name, char * sobel_timers_name, double read_time, double sobel_time);
 void startProcesses();
+
+void saveSobelTimer ( double sobel_time);
+void saveReadTimer ( double read_time);
 
 
 void* shmem;
@@ -106,22 +109,30 @@ int proceed ( char * read_name, char * save_name, char * read_timers_name, char 
 }
 
 void producerProcess(){
-	double read_time, sobel_time;
+	double read_time;
+	struct timespec start, stop;
+
+	if ( clock_gettime (CLOCK_REALTIME, &start ) == -1 ){
+		perror ("clock gettime");
+		exit(EXIT_FAILURE);
+		}
+
 	int height = 0, width = 0, bpp = 0;
-	int i=0,ix=0,iy=0;
+	int i=0,ix=0,iy=0,ik=0;
 
 	int *** array = readFile("images/pic.png", &width, &height, &bpp, &read_time);
+
 	char buffer[BUFFER_SIZE];
-	char *b;
+	//char *b;
 	for ( ix = 0; ix < height; ix++) {
 		for ( iy = 0; iy < width; iy++){
-			b = (char*)(array[ix][iy]);
-			buffer[iy + ix*height] = *b;
+			for ( ik = 0; ik < 3; ik++){
+				buffer[(iy+ix*width)*3+ik] = array[ix][iy][ik];
+			}
+			//b = (char*)(array[ix][iy]);
+			//buffer[iy + ix*width] = *b;
 		}
 	}
-
-
-
 
 	sem_wait( shm_full );
 	//printf("[PRODUCER]: shm_full down.\n");
@@ -129,42 +140,85 @@ void producerProcess(){
 	//printf("[PRODUCER]: mutex down.\n");
 
 	memcpy(shmem, buffer, sizeof(buffer));
-	printf("[PRODUCER]: Copied data to shared memory.\n");
+	//printf("[PRODUCER]: Copied data to shared memory.\n");
 	sem_post( shm_empty );
 	//printf("[PRODUCER]: shm_empty up.\n");
 	sem_post( mutex );
 	//printf("[PRODUCER]: mutex up.\n");
 
+	if ( clock_gettime (CLOCK_REALTIME, &stop ) == -1 ){
+		perror ("clock gettime");
+		exit(EXIT_FAILURE);
+		}
 
-
-
+	read_time = (stop.tv_sec - start.tv_sec ) + (double)(stop.tv_nsec - start.tv_nsec) / BILLION;
+	saveReadTimer(read_time);
 }
 
 void clientProcess(){
-		double read_time, sobel_time;
+		double sobel_time;
 		struct timespec start, stop;
+
+		if ( clock_gettime (CLOCK_REALTIME, &start ) == -1 ){
+		perror ("clock gettime");
+		exit(EXIT_FAILURE);
+		}
+
 		char buffer[BUFFER_SIZE];
 
 		sem_wait( shm_empty );
-		//printf("[Client]: shm_empty down.\n");
+		printf("[Client]: shm_empty down.\n");
 		sem_wait( mutex );
-		//printf("[Client]: mutex down.\n");
+		printf("[Client]: mutex down.\n");
 
 		memcpy(buffer, shmem, sizeof(buffer));
 		printf("[CLIENT]: Read data from shared memory.\n");
 
 		sem_post( mutex );
-		//printf("[Client]: mutex up.\n");
+		printf("[Client]: mutex up.\n");
 		sem_post( shm_full );
-		//printf("[Client]: shm_full up.\n");
+		printf("[Client]: shm_full up.\n");
 
-/*
-		for (int ix = 0; ix < 480; ix++) {
-			for (int iy = 0; iy < 640; iy++){
-				printf("%d, ", (int*)buffer[iy + ix*480]);
+		int *** array = (int***)malloc(480 * sizeof(int**)); //array[height][width][color]
+		int i, j;
+
+		for (i = 0; i < 480; i++) {
+			array[i] = (int**)malloc(640 * sizeof(int*));
+			for (j = 0; j < 640; j++) {
+				array[i][j] = (int*)malloc(3 * sizeof(int));
 			}
 		}
-*/
+
+
+		for ( int ix = 0; ix < 480; ix++) {
+			for ( int iy = 0; iy < 640; iy++){
+				for ( int ik = 0; ik < 3; ik++){
+					array[ix][iy][ik] = buffer[(iy+ix*640)*3+ik];
+				}
+			}
+		}
+
+		int ** result = sobelFilter(array, 480, 640, sobel_kernel2, &sobel_time);
+		result = thresholdImage(result, 480, 640, 160);
+
+		for (i = 0; i < 480; i++) {
+			for (j = 0; j < 640; j++) {
+				free(array[i][j]);
+			}
+			free(array[i]);
+		}
+		free(array);	
+
+		if ( clock_gettime (CLOCK_REALTIME, &stop ) == -1 ){
+		perror ("clock gettime");
+		exit(EXIT_FAILURE);
+		}
+
+		sobel_time = (stop.tv_sec - start.tv_sec ) + (double)(stop.tv_nsec - start.tv_nsec) / BILLION;
+		saveSobelTimer(sobel_time);
+
+		//saveFile("results/result.png", result, 480, 640, 3);
+
 }
 void archiverProcess(){
 	printf("Hello from archiver process\n");
@@ -309,6 +363,7 @@ int *** readFile (char * filename, int * width, int * height, int * bpp, double 
 
 int saveFile (char * save, int ** array, int height, int width, int bpp)
 {
+	/*
 	system("ls results | wc -l > size.txt");
 	FILE * size_file = fopen ("size.txt", "r");
 	int size;
@@ -318,7 +373,8 @@ int saveFile (char * save, int ** array, int height, int width, int bpp)
 	char * temp;
 	sprintf(temp, "%d", size);
 	strcat(save, temp);
-
+	check;
+	*/
 	int gray_channels = 1;
 	int gray_img_size = height * width * gray_channels;
 
@@ -339,6 +395,35 @@ int saveFile (char * save, int ** array, int height, int width, int bpp)
 
 	stbi_write_png(save, width, height, gray_channels, gray_img, width*gray_channels);
 	free (gray_img);
+}
+
+void saveReadTimer (double read_time)
+{
+	FILE * read_timers = fopen ("timers/read.txt", "a");
+	if ( read_timers == NULL)
+	{
+		perror ("Error opening file.");
+	}
+	else
+	{
+		fprintf(read_timers, "%lf;\n", read_time);
+		fclose (read_timers);
+	}
+}
+
+void saveSobelTimer ( double sobel_time)
+{
+	FILE * read_timers = fopen ("timers/sobel.txt", "a");
+	if ( read_timers == NULL)
+	{
+		perror ("Error opening file.");
+	}
+	else
+	{
+		fprintf(read_timers, "%lf;\n", sobel_time);
+		fclose (read_timers);
+	}
+
 }
 
 void saveTimer ( char * read_timers_name, char * sobel_timers_name, double read_time, double sobel_time)
